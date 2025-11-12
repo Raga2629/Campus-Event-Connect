@@ -21,6 +21,7 @@ export default function OrganizerDashboard() {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
   const [newEvent, setNewEvent] = useState({
     title: '',
     date: '',
@@ -35,19 +36,23 @@ export default function OrganizerDashboard() {
       return;
     }
     fetchEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userRole, navigate]);
 
   const fetchEvents = async () => {
+    setLoading(true);
     try {
-      const { data: eventsData } = await supabase
+      const { data: eventsData, error } = await supabase
         .from('events')
         .select('*')
         .eq('organizer_id', user?.id)
         .order('date', { ascending: true });
 
+      if (error) throw error;
+
       if (eventsData) {
         const eventsWithCounts = await Promise.all(
-          eventsData.map(async (event) => {
+          eventsData.map(async (event: any) => {
             const { count } = await supabase
               .from('registrations')
               .select('*', { count: 'exact', head: true })
@@ -59,11 +64,11 @@ export default function OrganizerDashboard() {
             };
           })
         );
-
         setEvents(eventsWithCounts);
       }
     } catch (error) {
       console.error('Error fetching events:', error);
+      alert('Failed to load events.');
     } finally {
       setLoading(false);
     }
@@ -74,15 +79,46 @@ export default function OrganizerDashboard() {
     setSubmitting(true);
 
     try {
-      const { error } = await supabase.from('events').insert([
+      if (!newEvent.date) {
+        alert('Please select an event date.');
+        setSubmitting(false);
+        return;
+      }
+
+      const selectedDate = new Date(newEvent.date);
+      selectedDate.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (selectedDate < today) {
+        alert('Event date cannot be in the past. Please choose today or a future date.');
+        setSubmitting(false);
+        return;
+      }
+
+      // Optional: ensure time is in future for same-day events
+      if (selectedDate.getTime() === today.getTime()) {
+        const [hh, mm] = newEvent.time.split(':').map(Number);
+        const eventDateTime = new Date(selectedDate);
+        eventDateTime.setHours(hh, mm, 0, 0);
+        if (eventDateTime.getTime() <= Date.now()) {
+          alert('For events happening today, please choose a future time.');
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      // Insert event (no image upload)
+      const { error: insertError } = await supabase.from('events').insert([
         {
           ...newEvent,
           organizer_id: user?.id,
         },
       ]);
 
-      if (error) throw error;
+      if (insertError) throw insertError;
 
+      alert('✅ Event added successfully!');
       setShowAddModal(false);
       setNewEvent({
         title: '',
@@ -93,7 +129,8 @@ export default function OrganizerDashboard() {
       });
       fetchEvents();
     } catch (error) {
-      alert('Failed to add event. Please try again.');
+      console.error('Failed to add event:', error);
+      alert('❌ Failed to add event. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -118,6 +155,8 @@ export default function OrganizerDashboard() {
       </div>
     );
   }
+
+  const todayISO = new Date().toISOString().split('T')[0];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -200,6 +239,7 @@ export default function OrganizerDashboard() {
               </div>
             ))}
           </div>
+
           {events.length === 0 && (
             <div className="bg-white rounded-xl shadow-md p-12 text-center text-gray-500">
               <p className="text-lg">No events created yet</p>
@@ -226,16 +266,19 @@ export default function OrganizerDashboard() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
                 <input
                   type="date"
                   required
+                  min={todayISO}
                   value={newEvent.date}
                   onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
                 <input
@@ -246,6 +289,7 @@ export default function OrganizerDashboard() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Venue</label>
                 <input
@@ -256,6 +300,7 @@ export default function OrganizerDashboard() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
@@ -266,6 +311,7 @@ export default function OrganizerDashboard() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
+
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
